@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Invoice Comparison Results</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            padding: 20px;
+            background-color: #f7f7f7;
+        }
+
+        h1 {
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+
+        .table-container {
+            max-height: 80vh;
+            overflow-y: auto;
+            border: 3px solid #000; /* bold outer table border */
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            min-width: 1200px;
+        }
+
+        th, td {
+            padding: 6px 8px;
+            border: 1px solid #ccc;
+            text-align: left;
+        }
+
+        th {
+            background-color: #eaeaea;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            border-top: 3px solid #000;
+            border-bottom: 3px solid #000;
+        }
+
+        /* Bold vertical line between GL Account and RVW Date */
+        td:nth-child(4),
+        th:nth-child(4) {
+            border-right: 3px solid #000;
+        }
+
+        /* Bold vertical line between RVW Amount and Craftable Amount */
+        td:nth-child(7),
+        th:nth-child(7) {
+            border-right: 3px solid #000;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        .match { color: green; font-weight: bold; }
+        .warn  { color: orange; font-weight: bold; }
+        .miss  { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Invoice Comparison Results</h1>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Diff</th>
+                    <th>Invoice</th>
+                    <th>GL Account</th>
+                    <th>RVW Date</th>
+                    <th>RVW Vendor</th>
+                    <th>RVW Amount</th>
+                    <th>Craftable Amount</th>
+                    <th>Craftable Vendor</th>
+                    <th>Craftable Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for key, gl, d_rvw, v_rvw, a_rvw, a_cr, diff, v_cr, d_cr in rows %}
+                    {% set invoice = key.split("_")[0] %}
+                    {% if v_rvw and v_cr %}
+                        {% if diff|abs < 0.01 %}
+                            {% set status = "✔" %} {% set cls = "match" %}
+                        {% else %}
+                            {% set status = "⚠" %} {% set cls = "warn" %}
+                        {% endif %}
+                    {% else %}
+                        {% set status = "✘" %} {% set cls = "miss" %}
+                    {% endif %}
+                    <tr>
+                        <td class="{{ cls }}">{{ status }}</td>
+                        <td>{{ "%.2f"|format(diff) }}</td>
+                        <td>{{ invoice }}</td>
+                        <td>{{ gl }}</td>
+                        <td>{{ d_rvw }}</td>
+                        <td>{{ v_rvw }}</td>
+                        <td>${{ "%.2f"|format(a_rvw) }}</td>
+                        <td>${{ "%.2f"|format(a_cr) }}</td>
+                        <td>{{ v_cr }}</td>
+                        <td>{{ d_cr }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

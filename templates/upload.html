@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Upload Invoice Files</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+            padding: 40px;
+            background-color: #f2f2f2;
+        }
+        h1 {
+            margin-bottom: 20px;
+        }
+        input[type="file"] {
+            margin-bottom: 20px;
+        }
+        button {
+            font-size: 16px;
+            padding: 8px 20px;
+            background-color: #337ab7;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #23527c;
+        }
+    </style>
+</head>
+<body>
+    <h1>Upload RVW, Foodager & Bevager Files</h1>
+    <form action="/" method="post" enctype="multipart/form-data">
+        <p><strong>RVW File (.xlsx):</strong><br><input type="file" name="rvw" required></p>
+        <p><strong>Foodager File (.xlsx):</strong><br><input type="file" name="food" required></p>
+        <p><strong>Bevager File (.xlsx):</strong><br><input type="file" name="bev" required></p>
+        <button type="submit">Compare Invoices</button>
+    </form>
+</body>
+</html>
