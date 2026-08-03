@@ -2,114 +2,504 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Invoice Comparison Results</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GL Reconciliation - Results</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
         body {
-            font-family: Arial, sans-serif;
-            font-size: 12px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", sans-serif;
+            background: #f5f5f5;
             padding: 20px;
-            background-color: #f7f7f7;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .stat-box {
+            background: #f0f7ff;
+            border-left: 4px solid #004085;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #004085;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .actions {
+            margin-top: 15px;
+        }
+        
+        .actions a,
+        .actions button {
+            display: inline-block;
+            padding: 10px 20px;
+            margin-right: 10px;
+            border-radius: 4px;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .actions a.btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .actions button.btn-export {
+            background: #28a745;
+            color: white;
+        }
+        
+        .actions button.btn-export:hover {
+            background: #218838;
+        }
+        
+        .actions a.btn-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .gl-section {
+            background: white;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .gl-header {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-bottom: 1px solid #ddd;
+            display: grid;
+            grid-template-columns: 1fr auto auto auto;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        .gl-title {
+            color: #333;
+            font-weight: 600;
+        }
+        
+        .gl-stats {
+            display: flex;
+            gap: 15px;
+            font-size: 12px;
+        }
+        
+        .stat {
+            padding: 5px 10px;
+            background: #e7f3ff;
+            border-radius: 3px;
+            color: #004085;
+        }
+        
+        .gl-content {
+            padding: 15px 20px;
+        }
+        
+        .match-group {
+            margin-bottom: 15px;
+        }
+        
+        .match-group-title {
+            color: #666;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .invoice-row {
+            display: grid;
+            grid-template-columns: 40px 1fr 80px 80px 80px 1fr;
+            gap: 15px;
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            align-items: center;
+            font-size: 13px;
+        }
+        
+        .invoice-row.missing-rvw {
+            background: #fff3cd;
+        }
+        
+        .invoice-row.missing-craftable {
+            background: #f8d7da;
+        }
+        
+        .invoice-row.amount-diff {
+            background: #fffbea;
+        }
+        
+        .checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        
+        .invoice-info {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        
+        .invoice-num {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .vendor-name {
+            color: #666;
+            font-size: 12px;
+        }
+        
+        .amount {
+            text-align: right;
+            font-weight: 500;
+        }
+        
+        .date {
+            color: #999;
+            font-size: 12px;
+        }
+        
+        .match-status {
+            font-size: 12px;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            background: #e7f3ff;
+            color: #004085;
+        }
+        
+        .no-matches {
+            color: #999;
+            font-style: italic;
+            padding: 10px;
+            text-align: center;
         }
 
-        h1 {
-            font-size: 20px;
+        .invoice-row.reclass {
+            background: #e9def7;
+        }
+
+        .split-section {
+            margin-bottom: 20px;
+        }
+
+        .split-section-title {
+            color: #333;
+            font-size: 16px;
+            font-weight: 600;
             margin-bottom: 10px;
         }
 
-        .table-container {
-            max-height: 80vh;
-            overflow-y: auto;
-            border: 3px solid #000; /* bold outer table border */
+        .split-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 12px;
+            overflow: hidden;
         }
 
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            min-width: 1200px;
+        .split-header {
+            background: #f8f9fa;
+            padding: 12px 20px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
         }
 
-        th, td {
-            padding: 6px 8px;
+        .split-header .invoice-num {
+            font-size: 15px;
+        }
+
+        .split-badge {
+            font-size: 11px;
+            font-weight: 600;
+            color: #004085;
+            background: #e7f3ff;
+            padding: 3px 8px;
+            border-radius: 3px;
+        }
+
+        .split-totals {
+            font-size: 12px;
+            color: #666;
+            margin-left: auto;
+        }
+
+        .split-lines {
+            padding: 10px 20px;
+        }
+
+        .split-line {
+            display: grid;
+            grid-template-columns: 30px 1fr 110px 110px 1fr;
+            gap: 15px;
+            padding: 8px 10px 8px 30px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            margin-bottom: 6px;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .split-line.missing-rvw {
+            background: #fff3cd;
+        }
+
+        .split-line.missing-craftable {
+            background: #f8d7da;
+        }
+
+        .split-line.amount-diff {
+            background: #fffbea;
+        }
+
+        .split-line.reclass {
+            background: #e9def7;
+        }
+
+        .split-line.matched {
+            background: #f4fbf5;
+        }
+
+        .checkbox-placeholder {
+            text-align: center;
+            color: #28a745;
+            font-weight: 700;
+        }
+
+        .gl-code {
+            color: #333;
+            font-weight: 500;
+        }
+
+        .toolbar-btn {
+            display: inline-block;
+            padding: 8px 14px;
+            margin-right: 8px;
+            border-radius: 4px;
             border: 1px solid #ccc;
-            text-align: left;
+            background: #fff;
+            color: #333;
+            font-size: 13px;
+            cursor: pointer;
         }
 
-        th {
-            background-color: #eaeaea;
-            position: sticky;
-            top: 0;
-            z-index: 1;
-            border-top: 3px solid #000;
-            border-bottom: 3px solid #000;
+        footer {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            color: #666;
+            font-size: 12px;
+            margin-top: 20px;
         }
-
-        /* Bold vertical line between GL Account and RVW Date */
-        td:nth-child(4),
-        th:nth-child(4) {
-            border-right: 3px solid #000;
-        }
-
-        /* Bold vertical line between RVW Amount and Craftable Amount */
-        td:nth-child(7),
-        th:nth-child(7) {
-            border-right: 3px solid #000;
-        }
-
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-
-        .match { color: green; font-weight: bold; }
-        .warn  { color: orange; font-weight: bold; }
-        .miss  { color: red; font-weight: bold; }
     </style>
 </head>
 <body>
-    <h1>Invoice Comparison Results</h1>
-
-    <div class="table-container">
-        <table>
-            <thead>
-                <tr>
-                    <th>Status</th>
-                    <th>Diff</th>
-                    <th>Invoice</th>
-                    <th>GL Account</th>
-                    <th>RVW Date</th>
-                    <th>RVW Vendor</th>
-                    <th>RVW Amount</th>
-                    <th>Craftable Amount</th>
-                    <th>Craftable Vendor</th>
-                    <th>Craftable Date</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for key, gl, d_rvw, v_rvw, a_rvw, a_cr, diff, v_cr, d_cr in rows %}
-                    {% set invoice = key.split("_")[0] %}
-                    {% if v_rvw and v_cr %}
-                        {% if diff|abs < 0.01 %}
-                            {% set status = "✔" %} {% set cls = "match" %}
-                        {% else %}
-                            {% set status = "⚠" %} {% set cls = "warn" %}
-                        {% endif %}
-                    {% else %}
-                        {% set status = "✘" %} {% set cls = "miss" %}
-                    {% endif %}
-                    <tr>
-                        <td class="{{ cls }}">{{ status }}</td>
-                        <td>{{ "%.2f"|format(diff) }}</td>
-                        <td>{{ invoice }}</td>
-                        <td>{{ gl }}</td>
-                        <td>{{ d_rvw }}</td>
-                        <td>{{ v_rvw }}</td>
-                        <td>${{ "%.2f"|format(a_rvw) }}</td>
-                        <td>${{ "%.2f"|format(a_cr) }}</td>
-                        <td>{{ v_cr }}</td>
-                        <td>{{ d_cr }}</td>
-                    </tr>
+    <div class="container">
+        <header>
+            <h1>GL Reconciliation Results</h1>
+            
+            <div class="summary">
+                <div class="stat-box">
+                    <div class="stat-value">{{ total_matched }}</div>
+                    <div class="stat-label">Matched</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value">{{ total_unmatched }}</div>
+                    <div class="stat-label">Discrepancies</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value">${{ "%.2f" | format(threshold) }}</div>
+                    <div class="stat-label">Threshold</div>
+                </div>
+            </div>
+            
+            <div class="actions">
+                <form method="POST" action="/export" style="display: inline;">
+                    {% for gl_code in grouped_results.keys() %}
+                        {% for result in grouped_results[gl_code] %}
+                            {% if result.match_type != 'matched' %}
+                                <input type="hidden" name="selected_invoices" value="{{ result.invoice_number }}_{{ result.gl_code }}" class="auto-select">
+                            {% endif %}
+                        {% endfor %}
+                    {% endfor %}
+                    <button type="submit" class="btn-export" onclick="return confirmExport()">Export All Discrepancies</button>
+                </form>
+                <a href="/" class="btn-secondary">Upload New Files</a>
+            </div>
+        </header>
+        
+        <form id="resultsForm" method="POST" action="/export">
+            {% if split_invoices %}
+            <div class="split-section">
+                <div class="split-section-title">Split Invoices ({{ split_invoices | length }})</div>
+                {% for split in split_invoices %}
+                <div class="split-card">
+                    <div class="split-header">
+                        <span class="invoice-num">{{ split.invoice_number }}</span>
+                        <span class="vendor-name">{{ split.vendor }}</span>
+                        <span class="split-badge">Split across {{ split.lines | length }} GL codes</span>
+                        <span class="split-totals">
+                            RVW total: ${{ "%.2f" | format(split.total_rvw) }} &nbsp;|&nbsp;
+                            Craftable total: ${{ "%.2f" | format(split.total_craftable) }}
+                        </span>
+                    </div>
+                    <div class="split-lines">
+                        {% for line in split.lines %}
+                        {% set row_class = 'reclass' if line.fuzzy_match else line.match_type.replace('_', '-') %}
+                        <div class="split-line {{ row_class }}">
+                            <input type="checkbox" class="checkbox" name="selected_invoices"
+                                   value="{{ line.invoice_number }}_{{ line.gl_code }}"
+                                   {% if line.match_type != 'matched' %}checked{% endif %}>
+                            <span class="gl-code">{{ line.gl_code }}{% if line.gl_description %} - {{ line.gl_description }}{% endif %}</span>
+                            <span class="amount">RVW ${{ "%.2f" | format(line.amount_rvw) }}</span>
+                            <span class="amount">Craftable ${{ "%.2f" | format(line.amount_craftable) }}</span>
+                            <span class="match-status">
+                                {% if line.match_type == 'matched' %}
+                                    <span class="status-badge">✓ Matched</span>
+                                {% elif line.match_type == 'missing_rvw' %}
+                                    <span class="status-badge">⚠ Missing from RVW</span>
+                                {% elif line.match_type == 'missing_craftable' %}
+                                    <span class="status-badge">⚠ Missing from Craftable</span>
+                                {% elif line.fuzzy_match %}
+                                    <span class="status-badge">↔ Possible reclass (${{ "%.2f" | format(line.difference) }})</span>
+                                {% else %}
+                                    <span class="status-badge">⚠ Diff ${{ "%.2f" | format(line.difference) }}</span>
+                                {% endif %}
+                            </span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
                 {% endfor %}
-            </tbody>
-        </table>
+            </div>
+            {% endif %}
+
+            {% for gl_code in grouped_results.keys() | sort %}
+                {% set gl_results = grouped_results[gl_code] %}
+                {% set summary = gl_summaries[gl_code] %}
+
+                <div class="gl-section">
+                    <div class="gl-header">
+                        <div class="gl-title">GL {{ gl_code }}{% if gl_results and gl_results[0].gl_description %} - {{ gl_results[0].gl_description }}{% endif %}</div>
+                        <div class="gl-stats">
+                            <span class="stat">{{ summary.matched }} matched</span>
+                            <span class="stat">{{ summary.unmatched }} unmatched</span>
+                        </div>
+                    </div>
+
+                    <div class="gl-content">
+                        {% if gl_results %}
+                        {% for result in gl_results %}
+                        {% set row_class = 'reclass' if result.fuzzy_match else result.match_type.replace('_', '-') %}
+                        <div class="invoice-row {{ row_class }}">
+                            <input type="checkbox" class="checkbox" name="selected_invoices"
+                                   value="{{ result.invoice_number }}_{{ result.gl_code }}"
+                                   {% if result.match_type != 'matched' %}checked{% endif %}>
+                            <div class="invoice-info">
+                                <span class="invoice-num">{{ result.invoice_number }}</span>
+                                <span class="vendor-name">{{ result.vendor_rvw or result.vendor_craftable }}</span>
+                            </div>
+                            <span class="amount">RVW ${{ "%.2f" | format(result.amount_rvw) }}</span>
+                            <span class="amount">Craftable ${{ "%.2f" | format(result.amount_craftable) }}</span>
+                            <span class="date">{{ result.date }}</span>
+                            <span class="match-status">
+                                {% if result.match_type == 'matched' %}
+                                    <span class="status-badge">✓ Matched</span>
+                                {% elif result.match_type == 'missing_rvw' %}
+                                    <span class="status-badge">⚠ Missing from RVW</span>
+                                {% elif result.match_type == 'missing_craftable' %}
+                                    <span class="status-badge">⚠ Missing from Craftable</span>
+                                {% elif result.fuzzy_match %}
+                                    <span class="status-badge">↔ Possible reclass (${{ "%.2f" | format(result.difference) }})</span>
+                                {% else %}
+                                    <span class="status-badge">⚠ Diff ${{ "%.2f" | format(result.difference) }}</span>
+                                {% endif %}
+                            </span>
+                        </div>
+                        {% endfor %}
+                        {% else %}
+                        <div class="no-matches">No line items for this GL code.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+
+            <div class="actions">
+                <button type="submit" class="btn-export" onclick="return confirmExport()">Export Selected to Excel</button>
+                <a href="/" class="btn-secondary">Upload New Files</a>
+            </div>
+        </form>
+
+        <footer>
+            GL Reconciliation MVP &mdash; III Forks Austin
+        </footer>
     </div>
+
+    <script>
+        function confirmExport() {
+            const checked = document.querySelectorAll('#resultsForm input[type="checkbox"]:checked, .auto-select');
+            if (checked.length === 0) {
+                alert('Select at least one line item to export.');
+                return false;
+            }
+            return true;
+        }
+    </script>
 </body>
 </html>

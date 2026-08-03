@@ -2,40 +2,176 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Upload Invoice Files</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GL Reconciliation - Upload</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
         body {
-            font-family: Arial, sans-serif;
-            font-size: 16px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", sans-serif;
+            background: #f5f5f5;
+            padding: 40px 20px;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
             padding: 40px;
-            background-color: #f2f2f2;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
+        
         h1 {
-            margin-bottom: 20px;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
         }
-        input[type="file"] {
-            margin-bottom: 20px;
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
         }
-        button {
+        
+        .error {
+            background: #fee;
+            color: #c00;
+            padding: 15px;
+            border-left: 4px solid #c00;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        label {
+            display: block;
+            color: #333;
+            font-weight: 500;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        input[type="file"],
+        input[type="number"] {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: monospace;
+        }
+        
+        input[type="file"]::file-selector-button {
+            background: #007bff;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        
+        input[type="file"]::file-selector-button:hover {
+            background: #0056b3;
+        }
+        
+        input[type="number"] {
             font-size: 16px;
-            padding: 8px 20px;
-            background-color: #337ab7;
+        }
+        
+        .threshold-note {
+            color: #666;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #28a745;
             color: white;
             border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: 600;
             cursor: pointer;
+            transition: background 0.2s;
         }
+        
         button:hover {
-            background-color: #23527c;
+            background: #218838;
+        }
+        
+        button:active {
+            background: #1e7e34;
+        }
+        
+        .info {
+            background: #f0f7ff;
+            color: #004085;
+            padding: 12px;
+            border-left: 4px solid #004085;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            font-size: 13px;
+            line-height: 1.5;
         }
     </style>
 </head>
 <body>
-    <h1>Upload RVW, Foodager & Bevager Files</h1>
-    <form action="/" method="post" enctype="multipart/form-data">
-        <p><strong>RVW File (.xlsx):</strong><br><input type="file" name="rvw" required></p>
-        <p><strong>Foodager File (.xlsx):</strong><br><input type="file" name="food" required></p>
-        <p><strong>Bevager File (.xlsx):</strong><br><input type="file" name="bev" required></p>
-        <button type="submit">Compare Invoices</button>
-    </form>
+    <div class="container">
+        <h1>GL Reconciliation</h1>
+        <p class="subtitle">Compare RVW and Craftable invoices</p>
+        
+        {% if error %}
+        <div class="error">
+            <strong>Error:</strong> {{ error }}
+        </div>
+        {% endif %}
+        
+        <div class="info">
+            <strong>Upload Instructions:</strong><br>
+            1. Export GL Detail Inquiry from RVW<br>
+            2. Export GL Distribution from Foodager and Bevager<br>
+            3. Upload all three files below<br>
+            4. Set your variance threshold ($5 default)<br>
+            5. Review results and export discrepancies
+        </div>
+        
+        <form method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="rvw">RVW GL Detail Inquiry (.xlsx)</label>
+                <input type="file" id="rvw" name="rvw" accept=".xlsx" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="food">Foodager GL Distribution (.xlsx)</label>
+                <input type="file" id="food" name="food" accept=".xlsx" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="bev">Bevager GL Distribution (.xlsx)</label>
+                <input type="file" id="bev" name="bev" accept=".xlsx" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="threshold">Variance Threshold ($)</label>
+                <input type="number" id="threshold" name="threshold" value="5.00" step="0.01" min="0" required>
+                <p class="threshold-note">Invoices within this amount are marked as matched. Adjust as needed.</p>
+            </div>
+            
+            <button type="submit">Reconcile</button>
+        </form>
+    </div>
 </body>
 </html>
