@@ -1,98 +1,160 @@
-from flask import Flask, render_template, request
-import pandas as pd
-import re
-from gl_accounts import gl_mapping
+"""
+GL Reconciliation Web Application
+
+Flask app for uploading RVW and Craftable exports, reconciling invoices,
+and exporting discrepancies for accounting review.
+"""
+
+from flask import Flask, render_template, request, send_file, jsonify
+import io
+import logging
+from parsers import parse_rvw, parse_craftable, FileValidationError
+from reconciler import Reconciler
+from exporters import export_selected_results_to_excel
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB max file size
 
-# Define Major GL Accounts
-MAJOR_GL_ACCOUNTS = {
-    '40100', '40150', '40200', '40250', '40300',
-    '40500', '40550', '40600', '40650', '40700',
-    '60000', '60050', '60700', '60750', '60800',
-    '60100', '60150', '60180', '60200', '60250',
-    '60300', '60350'
-}
+# Store results in session (stateless for now, can upgrade to session storage later)
+_last_results = None
+_last_threshold = None
 
 
-# Mappings
-mapping_rvw = {
-    "invoice_number": "Reference",
-    "vendor_name": "Description",
-    "amount": "Amount",
-    "date": "Tran Date",
-    "gl_account": "Major"
-}
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    """Main upload form."""
+    if request.method == 'POST':
+        return handle_upload()
+    return render_template('upload.html')
 
-mapping_craftable = {
-    "invoice_number": "INVOICE NO      ",
-    "vendor_name": "VENDOR      ",
-    "amount": "GL AMOUNT      ",
-    "total": "TOTAL      ",
-    "date": "INVOICE DATE      ",
-    "gl_account": "GL ACCOUNT      "
-}
 
-def clean_invoice(inv):
-    """Remove non-digit characters from invoice numbers."""
-    text = str(inv).strip().replace("–", "-").replace("—", "-")
-    text = text.replace("-", "")
-    return re.sub(r"[^\d]", "", text)
-
-def build_lookup(df: pd.DataFrame, m: dict):
-    """Return {invoice+gl_account: (vendor, amount, date, gl_description)}"""
-    lut = {}
-    for _, row in df.iterrows():
-        inv = clean_invoice(row[m["invoice_number"]])
-        vend = str(row[m["vendor_name"]]).strip()
+def handle_upload():
+    """Process uploaded files and display reconciliation results."""
+    global _last_results, _last_threshold
+    
+    try:
+        # Get uploaded files
+        rvw_file = request.files.get('rvw')
+        food_file = request.files.get('food')
+        bev_file = request.files.get('bev')
+        
+        # Validate files uploaded
+        if not all([rvw_file, food_file, bev_file]):
+            return render_template('upload.html', error='All three files are required')
+        
+        # Get threshold parameter
         try:
-            amt = float(row[m["amount"]])
-        except Exception:
-            amt = 0.0
-        date_raw = row.get(m["date"], "")
-        date = str(date_raw)[:10] if pd.notna(date_raw) else ""
-        gl_raw = str(row.get(m["gl_account"], "")).strip().split(" ")[0]
-        gl_desc = gl_mapping.get(gl_raw, f"{gl_raw} - Unknown")
-        key = f"{inv}_{gl_raw}"
-        lut[key] = (vend, amt, date, gl_desc)
-    return lut
+            threshold = float(request.form.get('threshold', 5.0))
+        except ValueError:
+            return render_template('upload.html', error='Threshold must be a number')
+        
+        if threshold < 0:
+            return render_template('upload.html', error='Threshold must be >= 0')
+        
+        # Parse files
+        df_rvw = parse_rvw(rvw_file)
+        df_craftable = parse_craftable(food_file, bev_file)
+        
+        # Reconcile
+        reconciler = Reconciler(threshold=threshold)
+        results = reconciler.reconcile(df_rvw, df_craftable)
+        
+        # Store results for export
+        _last_results = results
+        _last_threshold = threshold
+        
+        # Group by GL code, with each group sorted by date (per BK's export spec:
+        # sort by GL code, then date)
+        grouped = reconciler.group_by_gl()
+        for gl_code in grouped:
+            grouped[gl_code].sort(key=lambda r: r.date)
+        
+        # Calculate summaries
+        gl_summaries = {}
+        for gl_code in sorted(grouped.keys()):
+            gl_summaries[gl_code] = reconciler.get_summary_for_gl(gl_code)
+        
+        # Split invoices (span >1 GL code) get their own total + per-GL breakdown view
+        split_invoices = reconciler.get_split_invoices()
+        
+        return render_template(
+            'results.html',
+            grouped_results=grouped,
+            gl_summaries=gl_summaries,
+            split_invoices=split_invoices,
+            threshold=threshold,
+            total_results=len(results),
+            total_matched=sum(1 for r in results if r.match_type == 'matched'),
+            total_unmatched=sum(1 for r in results if r.match_type != 'matched')
+        )
+    
+    except FileValidationError as e:
+        logger.error(f"File validation error: {str(e)}")
+        return render_template('upload.html', error=f"File Error: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        return render_template('upload.html', error=f"Error: {str(e)}")
 
-@app.route("/", methods=["GET", "POST"])
-def upload():
-    if request.method == "POST":
-        rvw_file = request.files["rvw"]
-        food_file = request.files["food"]
-        bev_file = request.files["bev"]
 
-        df_rvw = pd.read_excel(rvw_file, header=3)
-        df_food = pd.read_excel(food_file, sheet_name="2. GL Distribution", header=5)
-        df_bev  = pd.read_excel(bev_file,  sheet_name="2. GL Distribution", header=5)
-        df_craftable = pd.concat([df_food, df_bev], ignore_index=True)
+@app.route('/export', methods=['POST'])
+def export():
+    """Export selected results to Excel."""
+    global _last_results
+    
+    try:
+        if not _last_results:
+            return jsonify({'error': 'No reconciliation results to export'}), 400
+        
+        # Get selected invoices from form
+        selected_keys = request.form.getlist('selected_invoices')
+        
+        if not selected_keys:
+            return jsonify({'error': 'No invoices selected for export'}), 400
+        
+        # Create Excel file in memory
+        buffer = io.BytesIO()
+        export_selected_results_to_excel(buffer, _last_results, selected_keys)
+        buffer.seek(0)
+        
+        return send_file(
+            buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='GL_Reconciliation_Report.xlsx'
+        )
+    
+    except Exception as e:
+        logger.error(f"Export error: {str(e)}", exc_info=True)
+        return jsonify({'error': f"Export failed: {str(e)}"}), 500
 
-        rvw_lookup = build_lookup(df_rvw, mapping_rvw)
-        craft_lookup = build_lookup(df_craftable, mapping_craftable)
 
-        rows = []
-        for key, (v_rvw, a_rvw, d_rvw, gl_rvw) in rvw_lookup.items():
-            if key in craft_lookup:
-                v_cr, a_cr, d_cr, gl_cr = craft_lookup[key]
-                diff = a_rvw - a_cr
-            else:
-                v_cr, a_cr, d_cr, gl_cr = "", 0.0, "", ""
-                diff = a_rvw
-            rows.append((key, gl_rvw, d_rvw, v_rvw, a_rvw, a_cr, diff, v_cr, d_cr))
-
-        for key, (v_cr, a_cr, d_cr, gl_cr) in craft_lookup.items():
-            if key not in rvw_lookup:
-                rows.append((key, gl_cr, "", "", 0.0, a_cr, -a_cr, v_cr, d_cr))
-
-        # Sort rows by GL → Vendor → Amount descending
-        rows.sort(key=lambda x: (x[1], x[3], -abs(x[4])))
+@app.errorhandler(413)
+def too_large(e):
+    """Handle file too large error."""
+    return render_template('upload.html', error='File too large (max 50 MB)'), 413
 
 
-        return render_template("results.html", rows=rows)
+@app.errorhandler(404)
+def not_found(e):
+    """Handle 404 errors."""
+    return render_template('upload.html', error='Page not found'), 404
 
-    return render_template("upload.html")
 
-if __name__ == "__main__":
-    app.run(debug=True)
+@app.errorhandler(500)
+def server_error(e):
+    """Handle 500 errors."""
+    logger.error(f"Server error: {str(e)}", exc_info=True)
+    return render_template('upload.html', error='Server error - please try again'), 500
+
+
+if __name__ == '__main__':
+    # Debug mode OFF for production
+    app.run(
+        host='127.0.0.1',
+        port=5000,
+        debug=False
+    )
