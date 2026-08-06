@@ -19,9 +19,15 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB max file size
 
-# Store results in session (stateless for now, can upgrade to session storage later)
+# Store parsed data + results in memory (stateless for now, can upgrade to
+# session storage later). The raw parsed DataFrames are cached separately
+# from the threshold so the threshold can be adjusted on the results page
+# and re-reconciled without asking accounting to re-upload all three files.
+_last_df_rvw = None
+_last_df_craftable = None
 _last_results = None
 _last_threshold = None
+_last_split_invoices = None
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -34,8 +40,8 @@ def index():
 
 def handle_upload():
     """Process uploaded files and display reconciliation results."""
-    global _last_results, _last_threshold
-    
+    global _last_df_rvw, _last_df_craftable
+
     try:
         # Get uploaded files
         rvw_file = request.files.get('rvw')
@@ -58,46 +64,83 @@ def handle_upload():
         # Parse files
         df_rvw = parse_rvw(rvw_file)
         df_craftable = parse_craftable(food_file, bev_file)
-        
-        # Reconcile
-        reconciler = Reconciler(threshold=threshold)
-        results = reconciler.reconcile(df_rvw, df_craftable)
-        
-        # Store results for export
-        _last_results = results
-        _last_threshold = threshold
-        
-        # Group by GL code, with each group sorted by date (per BK's export spec:
-        # sort by GL code, then date)
-        grouped = reconciler.group_by_gl()
-        for gl_code in grouped:
-            grouped[gl_code].sort(key=lambda r: r.date)
-        
-        # Calculate summaries
-        gl_summaries = {}
-        for gl_code in sorted(grouped.keys()):
-            gl_summaries[gl_code] = reconciler.get_summary_for_gl(gl_code)
-        
-        # Split invoices (span >1 GL code) get their own total + per-GL breakdown view
-        split_invoices = reconciler.get_split_invoices()
-        
-        return render_template(
-            'results.html',
-            grouped_results=grouped,
-            gl_summaries=gl_summaries,
-            split_invoices=split_invoices,
-            threshold=threshold,
-            total_results=len(results),
-            total_matched=sum(1 for r in results if r.match_type == 'matched'),
-            total_unmatched=sum(1 for r in results if r.match_type != 'matched')
-        )
-    
+
+        # Cache the parsed data so the threshold can be changed later from the
+        # results page without re-uploading.
+        _last_df_rvw = df_rvw
+        _last_df_craftable = df_craftable
+
+        return run_reconciliation(threshold)
+
     except FileValidationError as e:
         logger.error(f"File validation error: {str(e)}")
         return render_template('upload.html', error=f"File Error: {str(e)}")
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}", exc_info=True)
         return render_template('upload.html', error=f"Error: {str(e)}")
+
+
+@app.route('/reconcile', methods=['POST'])
+def reconcile():
+    """Re-run reconciliation against the cached uploaded files with a new
+    threshold. Lets accounting tighten/loosen the variance threshold (e.g.
+    $5 -> $10) while looking at the discrepancies, without re-uploading."""
+    if _last_df_rvw is None or _last_df_craftable is None:
+        return render_template(
+            'upload.html',
+            error='No uploaded files to re-reconcile. Please upload files again.'
+        )
+
+    try:
+        threshold = float(request.form.get('threshold', 5.0))
+    except ValueError:
+        return render_template('upload.html', error='Threshold must be a number')
+
+    if threshold < 0:
+        return render_template('upload.html', error='Threshold must be >= 0')
+
+    return run_reconciliation(threshold)
+
+
+def run_reconciliation(threshold):
+    """Reconcile the cached parsed DataFrames at the given threshold and
+    render the results page. Shared by the initial upload and by the
+    in-page threshold adjustment."""
+    global _last_results, _last_threshold, _last_split_invoices
+
+    reconciler = Reconciler(threshold=threshold)
+    results = reconciler.reconcile(_last_df_rvw, _last_df_craftable)
+
+    # Store results for export
+    _last_results = results
+    _last_threshold = threshold
+
+    # Group by GL code, with each group sorted by date (per BK's export spec:
+    # sort by GL code, then date)
+    grouped = reconciler.group_by_gl()
+    for gl_code in grouped:
+        grouped[gl_code].sort(key=lambda r: r.date)
+
+    # Calculate summaries
+    gl_summaries = {}
+    for gl_code in sorted(grouped.keys()):
+        gl_summaries[gl_code] = reconciler.get_summary_for_gl(gl_code)
+
+    # Split invoices (span >1 GL code) get their own total + per-GL breakdown view.
+    # Cached separately so the Total row checkbox can be exported (see /export).
+    split_invoices = reconciler.get_split_invoices()
+    _last_split_invoices = split_invoices
+
+    return render_template(
+        'results.html',
+        grouped_results=grouped,
+        gl_summaries=gl_summaries,
+        split_invoices=split_invoices,
+        threshold=threshold,
+        total_results=len(results),
+        total_matched=sum(1 for r in results if r.match_type == 'matched'),
+        total_unmatched=sum(1 for r in results if r.match_type != 'matched')
+    )
 
 
 @app.route('/export', methods=['POST'])
@@ -117,7 +160,9 @@ def export():
         
         # Create Excel file in memory
         buffer = io.BytesIO()
-        export_selected_results_to_excel(buffer, _last_results, selected_keys)
+        export_selected_results_to_excel(
+            buffer, _last_results, selected_keys, split_invoices=_last_split_invoices
+        )
         buffer.seek(0)
         
         return send_file(

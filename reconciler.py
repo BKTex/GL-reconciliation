@@ -300,12 +300,15 @@ class Reconciler:
         """
         Build display-ready groups for invoices that span more than one GL code.
 
-        Per BK's spec: show the invoice total once, plus each GL line below it
-        (vendor name shown once at the group level, not repeated per line).
+        Per BK's spec: the Total $ match (RVW invoice total vs. Craftable invoice
+        total) is the primary signal for a split invoice - it tells you whether the
+        invoice as a whole is accounted for. The individual GL lines are secondary
+        detail, useful for spotting a reclass, but shouldn't compete for attention.
 
         Returns:
-            List of dicts: {invoice_number, vendor, total_rvw, total_craftable, lines}
-            sorted by invoice number, with lines sorted by GL code.
+            List of dicts: {invoice_number, vendor, date, total_rvw, total_craftable,
+            total_difference, total_match_type, lines} sorted by invoice number,
+            with lines sorted by GL code.
         """
         by_invoice = self.group_by_invoice()
         splits = []
@@ -313,15 +316,44 @@ class Reconciler:
             if len(lines) < 2:
                 continue
             sorted_lines = sorted(lines, key=lambda r: r.gl_code)
-            vendor = next((l.vendor_rvw for l in sorted_lines if l.vendor_rvw), '') \
+            vendor = (
+                next((l.vendor_rvw for l in sorted_lines if l.vendor_rvw), '')
                 or next((l.vendor_craftable for l in sorted_lines if l.vendor_craftable), '')
+            )
+            dates = [l.date for l in sorted_lines if l.date]
+            date = min(dates) if dates else ''
+            total_rvw = sorted_lines[0].invoice_total_rvw
+            total_craftable = sorted_lines[0].invoice_total_craftable
+            total_match_type, total_diff = self._classify_invoice_total(total_rvw, total_craftable)
             splits.append({
                 'invoice_number': inv,
                 'vendor': vendor,
-                'total_rvw': sorted_lines[0].invoice_total_rvw,
-                'total_craftable': sorted_lines[0].invoice_total_craftable,
+                'date': date,
+                'total_rvw': total_rvw,
+                'total_craftable': total_craftable,
+                'total_difference': total_diff,
+                'total_match_type': total_match_type,
                 'lines': sorted_lines,
             })
         splits.sort(key=lambda s: s['invoice_number'])
         return splits
+
+    def _classify_invoice_total(self, total_rvw: float, total_craftable: float) -> Tuple[str, float]:
+        """
+        Classify a split invoice's Total $ match (RVW invoice total vs. Craftable
+        invoice total), distinguishing "entire invoice missing from one side" from
+        an ordinary amount difference so the export can label it accordingly.
+
+        Returns:
+            (match_type, difference) where match_type is one of
+            'matched' | 'missing_rvw' | 'missing_craftable' | 'amount_diff'
+        """
+        diff = total_rvw - total_craftable
+        if abs(diff) <= self.threshold:
+            return ('matched', 0.0)
+        if total_craftable == 0 and total_rvw != 0:
+            return ('missing_craftable', diff)
+        if total_rvw == 0 and total_craftable != 0:
+            return ('missing_rvw', diff)
+        return ('amount_diff', diff)
 
