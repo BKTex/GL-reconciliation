@@ -273,12 +273,6 @@
             border-radius: 3px;
         }
 
-        .split-totals {
-            font-size: 12px;
-            color: #666;
-            margin-left: auto;
-        }
-
         .split-lines {
             padding: 10px 20px;
         }
@@ -338,6 +332,127 @@
             cursor: pointer;
         }
 
+        .threshold-box {
+            background: #f0f7ff;
+            border-left: 4px solid #004085;
+            padding: 15px;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .threshold-box form {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .threshold-box label {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .threshold-box input[type="number"] {
+            width: 90px;
+            padding: 6px 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 15px;
+            font-weight: bold;
+            color: #004085;
+        }
+
+        .threshold-box button {
+            padding: 6px 14px;
+            background: #004085;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .threshold-box button:hover {
+            background: #002d5c;
+        }
+
+        /* Split invoices: the Total $ match is the primary signal, so it gets
+           a bold, high-contrast row. The individual GL lines below are
+           secondary detail and are visually subdued (smaller, muted colors)
+           while remaining fully checkable. */
+        .split-total {
+            display: grid;
+            grid-template-columns: 30px 1fr 130px 130px 1fr;
+            gap: 15px;
+            padding: 14px 20px;
+            border: 2px solid #ccd6e0;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            align-items: center;
+            font-size: 15px;
+            font-weight: 700;
+            background: #eef2f7;
+        }
+
+        .split-total .amount {
+            font-size: 15px;
+        }
+
+        .split-total .match-status {
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .split-total.missing-rvw {
+            background: #fff3cd;
+            border-color: #e0a800;
+        }
+
+        .split-total.missing-craftable {
+            background: #f8d7da;
+            border-color: #dc3545;
+        }
+
+        .split-total.amount-diff {
+            background: #fffbea;
+            border-color: #e0a800;
+        }
+
+        .split-total.matched {
+            background: #e9f7ec;
+            border-color: #28a745;
+        }
+
+        .split-lines-label {
+            font-size: 11px;
+            color: #999;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+            margin: 4px 0 8px 4px;
+        }
+
+        .split-line {
+            opacity: 0.9;
+            font-size: 12px;
+        }
+
+        .split-line .gl-code {
+            color: #666;
+            font-weight: 400;
+        }
+
+        .split-line .amount {
+            font-weight: 400;
+            color: #555;
+        }
+
+        .split-line .status-badge {
+            font-size: 10px;
+        }
+
         footer {
             background: white;
             padding: 20px;
@@ -363,9 +478,14 @@
                     <div class="stat-value">{{ total_unmatched }}</div>
                     <div class="stat-label">Discrepancies</div>
                 </div>
-                <div class="stat-box">
-                    <div class="stat-value">${{ "%.2f" | format(threshold) }}</div>
-                    <div class="stat-label">Threshold</div>
+                <div class="threshold-box">
+                    <form method="POST" action="/reconcile">
+                        <label for="threshold">Variance Threshold ($)</label>
+                        <input type="number" id="threshold" name="threshold"
+                               value="{{ "%.2f" | format(threshold) }}" step="0.01" min="0" required>
+                        <button type="submit">Apply</button>
+                    </form>
+                    <span class="stat-label">Adjust and re-apply without re-uploading (e.g. $5 &rarr; $10 to reduce noise).</span>
                 </div>
             </div>
             
@@ -394,18 +514,37 @@
                         <span class="invoice-num">{{ split.invoice_number }}</span>
                         <span class="vendor-name">{{ split.vendor }}</span>
                         <span class="split-badge">Split across {{ split.lines | length }} GL codes</span>
-                        <span class="split-totals">
-                            RVW total: ${{ "%.2f" | format(split.total_rvw) }} &nbsp;|&nbsp;
-                            Craftable total: ${{ "%.2f" | format(split.total_craftable) }}
-                        </span>
                     </div>
                     <div class="split-lines">
+                        {# The Total $ match is the primary signal for a split invoice - it
+                           shows whether the invoice as a whole reconciles, regardless of how
+                           its dollars were divided across GL codes. Checking this box exports
+                           the discrepancy as a single entire-invoice line, not a GL line. #}
+                        <div class="split-total {{ split.total_match_type.replace('_', '-') }}">
+                            <input type="checkbox" class="checkbox" name="selected_invoices"
+                                   value="{{ split.invoice_number }}_TOTAL">
+                            <span>Invoice Total</span>
+                            <span class="amount">RVW ${{ "%.2f" | format(split.total_rvw) }}</span>
+                            <span class="amount">Craftable ${{ "%.2f" | format(split.total_craftable) }}</span>
+                            <span class="match-status">
+                                {% if split.total_match_type == 'matched' %}
+                                    <span class="status-badge">✓ Matched</span>
+                                {% elif split.total_match_type == 'missing_rvw' %}
+                                    <span class="status-badge">⚠ Entire invoice missing from RVW</span>
+                                {% elif split.total_match_type == 'missing_craftable' %}
+                                    <span class="status-badge">⚠ Entire invoice missing from Craftable</span>
+                                {% else %}
+                                    <span class="status-badge">⚠ Diff ${{ "%.2f" | format(split.total_difference) }}</span>
+                                {% endif %}
+                            </span>
+                        </div>
+
+                        <div class="split-lines-label">GL lines</div>
                         {% for line in split.lines %}
                         {% set row_class = 'reclass' if line.fuzzy_match else line.match_type.replace('_', '-') %}
                         <div class="split-line {{ row_class }}">
                             <input type="checkbox" class="checkbox" name="selected_invoices"
-                                   value="{{ line.invoice_number }}_{{ line.gl_code }}"
-                                   {% if line.match_type != 'matched' %}checked{% endif %}>
+                                   value="{{ line.invoice_number }}_{{ line.gl_code }}">
                             <span class="gl-code">{{ line.gl_code }}{% if line.gl_description %} - {{ line.gl_description }}{% endif %}</span>
                             <span class="amount">RVW ${{ "%.2f" | format(line.amount_rvw) }}</span>
                             <span class="amount">Craftable ${{ "%.2f" | format(line.amount_craftable) }}</span>
@@ -449,8 +588,7 @@
                         {% set row_class = 'reclass' if result.fuzzy_match else result.match_type.replace('_', '-') %}
                         <div class="invoice-row {{ row_class }}">
                             <input type="checkbox" class="checkbox" name="selected_invoices"
-                                   value="{{ result.invoice_number }}_{{ result.gl_code }}"
-                                   {% if result.match_type != 'matched' %}checked{% endif %}>
+                                   value="{{ result.invoice_number }}_{{ result.gl_code }}">
                             <div class="invoice-info">
                                 <span class="invoice-num">{{ result.invoice_number }}</span>
                                 <span class="vendor-name">{{ result.vendor_rvw or result.vendor_craftable }}</span>

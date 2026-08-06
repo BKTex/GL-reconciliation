@@ -135,6 +135,59 @@ class TestSplitInvoiceDetection:
         assert splits[0]["total_rvw"] == 1000.0
         assert splits[0]["total_craftable"] == 950.0
         assert len(splits[0]["lines"]) == 2
+        # Total $ match is the primary signal for a split invoice: $50 diff
+        # on a $5 threshold, both sides non-zero -> amount_diff, not "missing".
+        assert splits[0]["total_match_type"] == "amount_diff"
+        assert splits[0]["total_difference"] == pytest.approx(50.0)
+
+    def test_split_invoice_total_within_threshold_is_matched(self):
+        df_rvw = make_rvw_df([
+            {"invoice_number": "SPLIT2", "vendor_name": "SYSCO", "amount": 600.0,
+             "date": "2026-03-01", "gl_account": "40100"},
+            {"invoice_number": "SPLIT2", "vendor_name": "SYSCO", "amount": 400.0,
+             "date": "2026-03-01", "gl_account": "40200"},
+        ])
+        df_craft = make_craft_df([
+            {"invoice_number": "SPLIT2", "vendor_name": "SYSCO", "gl_amount": 601.0,
+             "total_amount": 1002.0, "date": "2026-03-01", "gl_account": "40100"},
+            {"invoice_number": "SPLIT2", "vendor_name": "SYSCO", "gl_amount": 400.0,
+             "total_amount": 1002.0, "date": "2026-03-01", "gl_account": "40200"},
+        ])
+
+        rec = Reconciler(threshold=5.0)
+        rec.reconcile(df_rvw, df_craft)
+        splits = rec.get_split_invoices()
+
+        assert len(splits) == 1
+        assert splits[0]["total_match_type"] == "matched"
+        assert splits[0]["total_difference"] == 0.0
+
+    def test_split_invoice_total_missing_from_craftable(self):
+        """A split invoice whose Craftable side never appears at all (invoice
+        total $0 on that side) should surface as a whole-invoice "missing",
+        not just an oversized amount_diff."""
+        df_rvw = make_rvw_df([
+            {"invoice_number": "SPLIT3", "vendor_name": "SYSCO", "amount": 300.0,
+             "date": "2026-03-01", "gl_account": "40100"},
+            {"invoice_number": "SPLIT3", "vendor_name": "SYSCO", "amount": 200.0,
+             "date": "2026-03-01", "gl_account": "40200"},
+        ])
+        # SPLIT3 never appears in craftable; give craftable an unrelated split
+        # invoice so the RVW rows aren't filtered out by GL-scope restriction.
+        df_craft = make_craft_df([
+            {"invoice_number": "OTHERSPLIT", "vendor_name": "SYSCO", "gl_amount": 50.0,
+             "total_amount": 100.0, "date": "2026-03-01", "gl_account": "40100"},
+            {"invoice_number": "OTHERSPLIT", "vendor_name": "SYSCO", "gl_amount": 50.0,
+             "total_amount": 100.0, "date": "2026-03-01", "gl_account": "40200"},
+        ])
+
+        rec = Reconciler(threshold=5.0)
+        rec.reconcile(df_rvw, df_craft)
+        splits = rec.get_split_invoices()
+
+        split3 = [s for s in splits if s["invoice_number"] == "SPLIT3"][0]
+        assert split3["total_craftable"] == 0.0
+        assert split3["total_match_type"] == "missing_craftable"
 
     def test_non_split_invoice_not_in_split_list(self):
         df_rvw = make_rvw_df([
