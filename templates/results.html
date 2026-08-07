@@ -490,18 +490,10 @@
             </div>
             
             <div class="actions">
-                <form method="POST" action="/export" style="display: inline;">
-                    {% for gl_code in grouped_results.keys() %}
-                        {% for result in grouped_results[gl_code] %}
-                            {% if result.match_type != 'matched' %}
-                                <input type="hidden" name="selected_invoices" value="{{ result.invoice_number }}_{{ result.gl_code }}" class="auto-select">
-                            {% endif %}
-                        {% endfor %}
-                    {% endfor %}
-                    <button type="submit" class="btn-export" onclick="return confirmExport()">Export All Discrepancies</button>
-                </form>
+                <button type="button" class="btn-export" onclick="checkAllDiscrepancies()">Check All Discrepancies</button>
                 <a href="/" class="btn-secondary">Upload New Files</a>
             </div>
+            <span class="stat-label">Only checked items are included in the export &mdash; use this to tick every discrepancy, then uncheck any you don't want, before exporting below.</span>
         </header>
         
         <form id="resultsForm" method="POST" action="/export">
@@ -631,12 +623,29 @@
 
     <script>
         function confirmExport() {
-            const checked = document.querySelectorAll('#resultsForm input[type="checkbox"]:checked, .auto-select');
+            const checked = document.querySelectorAll('#resultsForm input[type="checkbox"]:checked');
             if (checked.length === 0) {
                 alert('Select at least one line item to export.');
                 return false;
             }
             return true;
+        }
+
+        // Ticks the checkbox for every discrepancy (missing/diff/reclass row,
+        // including each split invoice's Total row and its GL lines) without
+        // touching already-matched rows. This only sets checkbox state on the
+        // page - the export itself still only includes whatever is checked
+        // when "Export Selected to Excel" is submitted, so anything unchecked
+        // afterward is left out of the report.
+        function checkAllDiscrepancies() {
+            document.querySelectorAll(
+                '#resultsForm input[type="checkbox"][name="selected_invoices"]'
+            ).forEach(function (checkbox) {
+                const row = checkbox.closest('.invoice-row, .split-line, .split-total');
+                if (row && !row.classList.contains('matched')) {
+                    checkbox.checked = true;
+                }
+            });
         }
     </script>
 </body>
